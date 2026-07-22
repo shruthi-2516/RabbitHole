@@ -1,3 +1,5 @@
+require('dotenv').config(); 
+// or if your .env file is one directory up, use: require('dotenv').config({ path: '../.env' });
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -11,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://nxkatskdnxkaupydveuj.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54a2F0c2tkbnhrYXVweWR2ZXVqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzQzNjQ5NiwiZXhwIjoyMDk5MDEyNDk2fQ.BJR0GRp52KEmF1szl_Oago_x-xsQGrTv8MlvK41a6NE';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const ADMIN_USER_ID = 'ce8fdcb7-138f-4f5a-907d-4df76b26a8be'; 

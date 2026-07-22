@@ -1,7 +1,7 @@
 const { GoogleGenAI } = require('@google/genai');
 
 const apiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 /**
  * Summarizes a single browsing node and extracts key concept tags using Gemini
