@@ -12,6 +12,7 @@
     "@supabase/auth-ui-react": "^0.4.7",
     "@supabase/auth-ui-shared": "^0.1.8",
     "@supabase/supabase-js": "^2.110.1",
+    "@vercel/speed-insights": "^2.0.0",
     "@xyflow/react": "^12.11.2",
     "gsap": "^3.15.0",
     "lucide-react": "^1.23.0",
