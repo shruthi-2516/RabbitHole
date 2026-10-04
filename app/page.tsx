@@ -2,554 +2,549 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import gsap from 'gsap';
+import type { Session } from '@supabase/supabase-js';
+// Adjust this import to wherever your browser Supabase client lives.
 import { supabase } from '@/lib/supabase';
 
-export default function LandingPage() {
-  const [isDark, setIsDark] = useState(true);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [checkedAuth, setCheckedAuth] = useState(false);
+/* -------------------------------------------------------------------------- */
+/*  Theme tokens (applied as CSS variables, so no Tailwind dark-mode config)   */
+/* -------------------------------------------------------------------------- */
 
-  const containerRef = useRef<HTMLDivElement>(null);
+type Theme = 'dark' | 'light';
+
+const THEMES: Record<Theme, { vars: Record<string, string>; dot: string }> = {
+  dark: {
+    dot: '255,255,255',
+    vars: {
+      '--bg': '#0a0a0c',
+      '--fg': '#ffffff',
+      '--text': '#d4d4d4',
+      '--muted': '#a3a3a3',
+      '--subtle': '#737373',
+      '--faint': '#2a2a2e',
+      '--line': '#1c1c20',
+      '--line-strong': '#2a2a30',
+      '--card': 'rgba(16,16,20,0.82)',
+      '--btn-bg': '#ffffff',
+      '--btn-fg': '#0a0a0c',
+      '--btn-hover': '#e5e5e5',
+    },
+  },
+  light: {
+    dot: '10,10,12',
+    vars: {
+      '--bg': '#fafaf9',
+      '--fg': '#0a0a0c',
+      '--text': '#262626',
+      '--muted': '#525252',
+      '--subtle': '#737373',
+      '--faint': '#d4d4d4',
+      '--line': '#e7e7e5',
+      '--line-strong': '#d4d4d4',
+      '--card': 'rgba(255,255,255,0.85)',
+      '--btn-bg': '#0a0a0c',
+      '--btn-fg': '#ffffff',
+      '--btn-hover': '#262626',
+    },
+  },
+};
+
+const THEME_KEY = 'rabbithole-theme';
+
+/* -------------------------------------------------------------------------- */
+/*  Animated dot-wave background (canvas, no dependencies)                     */
+/* -------------------------------------------------------------------------- */
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+function DotWaves({ rgb }: { rgb: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const titleRow1Ref = useRef<HTMLHeadingElement>(null);
-  const titleRow2Ref = useRef<HTMLHeadingElement>(null);
-  const descRef = useRef<HTMLParagraphElement>(null);
-  const ctaRef = useRef<HTMLDivElement>(null);
-  const featureSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUserEmail(session?.user?.email || null);
-      setCheckedAuth(true);
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let w = 0;
+    let h = 0;
+    let raf = 0;
+    const start = performance.now();
+
+    const draw = (t: number) => {
+      ctx.clearRect(0, 0, w, h);
+      const gap = w < 640 ? 16 : 14;
+      const maxR = gap * 0.42;
+
+      ctx.fillStyle = `rgba(${rgb},0.5)`;
+      ctx.beginPath();
+      for (let y = gap / 2; y < h; y += gap) {
+        for (let x = gap / 2; x < w; x += gap) {
+          // Two interfering sine fields produce flowing bands of larger dots
+          const v =
+            Math.sin(x * 0.0065 + Math.sin(y * 0.005 + t * 0.35) * 1.8 + t * 0.25) +
+            Math.sin((x * 0.4 - y) * 0.006 - t * 0.3);
+          const n = (v + 2) / 4;
+          const r = 0.5 + smoothstep(0.45, 0.85, n) * (maxR - 0.5);
+          ctx.moveTo(x + r, y);
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+        }
+      }
+      ctx.fill();
+    };
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (reduceMotion) draw(0);
+    };
+
+    const loop = (now: number) => {
+      draw((now - start) / 1000);
+      raf = requestAnimationFrame(loop);
+    };
+
+    const onVisibility = () => {
+      if (reduceMotion) return;
+      cancelAnimationFrame(raf);
+      if (!document.hidden) raf = requestAnimationFrame(loop);
+    };
+
+    resize();
+    window.addEventListener('resize', resize);
+    document.addEventListener('visibilitychange', onVisibility);
+    if (!reduceMotion) raf = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [rgb]);
+
+  const mask = 'radial-gradient(ellipse 90% 80% at 50% 45%, #000 25%, rgba(0,0,0,0.5) 60%, transparent 100%)';
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-hidden
+        className="pointer-events-none fixed inset-0 h-full w-full"
+        style={{ WebkitMaskImage: mask, maskImage: mask }}
+      />
+      {/* Soft scrim behind the hero copy so text stays readable over the dots */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 70% 55% at 34% 40%, color-mix(in srgb, var(--bg) 88%, transparent), transparent 80%)',
+        }}
+      />
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Scroll reveal: "fade" (subtle) or "pop" (cards), one-shot IntersectionObserver */
+/* -------------------------------------------------------------------------- */
+
+function Reveal({
+  children,
+  delay = 0,
+  pop = false,
+  className = '',
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  pop?: boolean;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShown(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShown(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -8% 0px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const hidden = pop
+    ? 'opacity-0 translate-y-10 scale-[0.96] blur-sm'
+    : 'opacity-0 translate-y-4 blur-sm';
+  const visible = 'opacity-100 translate-y-0 scale-100 blur-0';
+
+  return (
+    <div
+      ref={ref}
+      style={{ transitionDelay: shown ? `${delay}ms` : '0ms' }}
+      className={[
+        'transition-[opacity,transform,filter] will-change-[opacity,transform,filter]',
+        pop
+          ? 'duration-[900ms] ease-[cubic-bezier(0.16,1,0.3,1)]'
+          : 'duration-700 ease-out',
+        'motion-reduce:!translate-y-0 motion-reduce:!scale-100 motion-reduce:!opacity-100 motion-reduce:!blur-0 motion-reduce:transition-none',
+        shown ? visible : hidden,
+        className,
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Content                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const STEPS = [
+  {
+    layer: 'Ingestion Layer',
+    index: '01',
+    title: 'Background Extension Harvest',
+    body: 'A browser extension quietly records the documentation pages you open and the path you took between them, so nothing depends on you remembering to save it.',
+  },
+  {
+    layer: 'Analysis Engine',
+    index: '02',
+    title: 'LLM Structural Summary',
+    body: 'An LLM reads each captured page and writes a structural summary: the key concepts, and how they connect to the pages around it.',
+  },
+  {
+    layer: 'Projection Canvas',
+    index: '03',
+    title: 'Interactive Node Mappings',
+    body: 'Summaries become reactive graph nodes on a live canvas. Follow connections to see how everything you read fits together.',
+  },
+];
+
+// Shared horizontal container so every section aligns on all viewports.
+const CONTAINER = 'relative z-10 mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-12';
+
+// Soft halo in the background colour keeps text legible over moving dots
+const HALO =
+  '[text-shadow:0_0_10px_var(--bg),0_0_22px_var(--bg),0_0_38px_var(--bg)]';
+
+const BTN_PRIMARY =
+  'inline-flex items-center justify-center rounded bg-[color:var(--btn-bg)] text-[color:var(--btn-fg)] font-medium text-xs shadow-sm transition-all duration-200 hover:bg-[color:var(--btn-hover)] active:scale-95';
+
+/* -------------------------------------------------------------------------- */
+/*  Page                                                                       */
+/* -------------------------------------------------------------------------- */
+
+export default function LandingPage() {
+  const [theme, setTheme] = useState<Theme>('dark');
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Restore saved theme (defaults to dark, the original look)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') setTheme(saved);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+
+  // Apply the theme site-wide: variables and background on <html> and <body>,
+  // so overscroll areas and any other page reading these variables follow too.
+  useEffect(() => {
+    const root = document.documentElement;
+    const { vars } = THEMES[theme];
+    Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    root.dataset.theme = theme;
+    root.classList.toggle('dark', theme === 'dark');
+    root.style.colorScheme = theme;
+    root.style.backgroundColor = vars['--bg'];
+    document.body.style.backgroundColor = vars['--bg'];
+    document.body.style.color = vars['--fg'];
+  }, [theme]);
+
+  // Keep other tabs in sync
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === THEME_KEY && (e.newValue === 'light' || e.newValue === 'dark')) {
+        setTheme(e.newValue);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const toggleTheme = () => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setSession(data.session);
+      setAuthReady(true);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email || null);
-      setCheckedAuth(true);
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return;
+      setSession(nextSession);
+      setAuthReady(true);
     });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // Balanced Dither Grid Layer
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animationFrameId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
-
-    const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', handleResize);
-
-    const spacing = 20;
-    let phase = 0;
-
-    const render = () => {
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = isDark
-        ? 'rgba(255, 255, 255, 0.12)'
-        : 'rgba(0, 0, 0, 0.06)';
-
-      phase += 0.02;
-
-      for (let x = 0; x < width; x += spacing) {
-        for (let y = 0; y < height; y += spacing) {
-          const distFromCenter = Math.sqrt(
-            Math.pow(x - width / 2, 2) + Math.pow(y - height / 2, 2)
-          );
-          const wave1 = Math.sin(x * 0.006 + phase);
-          const wave2 = Math.cos(
-            y * 0.005 + phase + distFromCenter * 0.003
-          );
-          const offset = (wave1 + wave2) * 8;
-
-          ctx.fillRect(x, y + offset, 1.6, 1.6);
-        }
-      }
-      animationFrameId = requestAnimationFrame(render);
-    };
-    render();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationFrameId);
+      active = false;
+      subscription.unsubscribe();
     };
-  }, [isDark]);
-
-  // Entrance Reveal Animations
-  useEffect(() => {
-    const tl = gsap.timeline({
-      defaults: { ease: 'power4.out', duration: 1.4 },
-    });
-    gsap.set([headerRef.current, descRef.current, ctaRef.current], {
-      opacity: 0,
-    });
-    gsap.set([titleRow1Ref.current, titleRow2Ref.current], {
-      y: 25,
-      opacity: 0,
-    });
-    if (featureSectionRef.current) {
-      gsap.set(featureSectionRef.current.children, { opacity: 0, y: 15 });
-    }
-
-    tl.to(containerRef.current, { opacity: 1, duration: 0.3 })
-      .to(
-        [titleRow1Ref.current, titleRow2Ref.current],
-        { y: 0, opacity: 1, stagger: 0.1 }
-      )
-      .to(headerRef.current, { opacity: 1, y: 0 }, '-=1')
-      .to(descRef.current, { opacity: 1, y: 0 }, '-=1')
-      .to(ctaRef.current, { opacity: 1, y: 0 }, '-=1');
-
-    if (featureSectionRef.current) {
-      tl.to(
-        featureSectionRef.current.children,
-        { opacity: 1, y: 0, stagger: 0.06 },
-        '-=0.8'
-      );
-    }
   }, []);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setSigningOut(false);
+    }
+  };
+
+  const email = session?.user?.email ?? null;
+  const tokens = THEMES[theme];
 
   return (
     <div
-      ref={containerRef}
-      className={`min-h-screen relative overflow-hidden flex flex-col justify-between transition-colors duration-700 ease-in-out select-none font-sans
-        ${
-          isDark
-            ? 'bg-[#0a0a0c] text-neutral-200'
-            : 'bg-[#fcfcfc] text-neutral-900'
-        }`}
+      style={tokens.vars as React.CSSProperties}
+      className="relative flex min-h-screen flex-col overflow-x-hidden bg-[color:var(--bg)] font-sans text-[color:var(--fg)] antialiased transition-colors duration-300 selection:bg-neutral-500/40"
     >
-      {/* MONOCHROME SLATE MESH BACKGROUND */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div
-          className={`absolute top-[-10%] left-[-5%] w-[75vw] h-[65vh] rounded-full filter blur-[120px] transition-all duration-700
-          ${isDark ? 'bg-zinc-800/20' : 'bg-neutral-200/50'}`}
-        />
-        <div
-          className={`absolute bottom-[-5%] right-[-5%] w-[65vw] h-[60vh] rounded-full filter blur-[140px] transition-all duration-700
-          ${isDark ? 'bg-slate-800/15' : 'bg-slate-200/40'}`}
-        />
-      </div>
+      <DotWaves rgb={tokens.dot} />
 
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 pointer-events-none z-10"
-      />
-
-      {/* TOP HEADER */}
-      <header
-        ref={headerRef}
-        className={`border-b px-8 py-5 flex justify-between items-center relative z-20 transition-colors duration-500
-          ${
-            isDark
-              ? 'border-neutral-900 bg-neutral-950/20'
-              : 'border-neutral-200 bg-white/20'
-          }`}
-      >
-        <Link href="/" className="flex items-center gap-2.5 cursor-pointer">
-          <div
-            className={`h-1.5 w-1.5 rounded-full ${
-              isDark ? 'bg-white' : 'bg-black'
-            }`}
-          />
-          <span className="text-xs font-semibold tracking-wider uppercase">
-            RabbitHole
-          </span>
-        </Link>
-
-        <div className="flex items-center gap-4 sm:gap-6">
-          {checkedAuth && userEmail && (
-            <div
-              className={`hidden md:flex items-center gap-2 border px-3 py-1.5 rounded-md ${
-                isDark
-                  ? 'border-neutral-800 bg-neutral-900/40 text-neutral-400'
-                  : 'border-neutral-200 bg-neutral-50 text-neutral-600'
-              }`}
-            >
-              <div
-                className={`h-1 w-1 rounded-full ${
-                  isDark ? 'bg-neutral-500' : 'bg-neutral-400'
-                }`}
-              />
-              <span className="text-xs font-medium max-w-[180px] truncate">
-                {userEmail}
-              </span>
-            </div>
-          )}
-
-          <button
-            onClick={() => setIsDark(!isDark)}
-            className={`text-xs border px-3 py-1.5 font-medium cursor-pointer transition-all duration-200 rounded-md
-              ${
-                isDark
-                  ? 'border-neutral-800 bg-neutral-900/60 text-neutral-300 hover:text-white hover:border-neutral-700'
-                  : 'border-neutral-200 bg-white text-neutral-600 hover:text-neutral-950 hover:border-neutral-300 shadow-xs'
-              }`}
-          >
-            {isDark ? 'Light' : 'Dark'}
-          </button>
-
-          {checkedAuth &&
-            (userEmail ? (
-              <>
-                <Link href="/console">
-                  <button
-                    className={`text-xs border px-3 py-1.5 font-semibold transition-all duration-200 rounded-md cursor-pointer
-                    ${
-                      isDark
-                        ? 'bg-neutral-100 text-neutral-950 border-neutral-100 hover:bg-white'
-                        : 'bg-neutral-950 text-white border-neutral-950 hover:bg-neutral-800'
-                    }`}
-                  >
-                    Console
-                  </button>
-                </Link>
-                <button
-                  onClick={() => supabase.auth.signOut()}
-                  className={`text-xs border px-3 py-1.5 font-medium transition-all duration-200 rounded-md cursor-pointer
-                    ${
-                      isDark
-                        ? 'border-neutral-800 bg-neutral-900/20 text-neutral-400 hover:text-white'
-                        : 'border-neutral-200 bg-white text-neutral-500 hover:text-neutral-950'
-                    }`}
-                >
-                  Sign Out
-                </button>
-              </>
-            ) : (
-              <Link href="/console">
-                <button
-                  className={`text-xs border px-3 py-1.5 font-semibold transition-all duration-200 rounded-md cursor-pointer
-                  ${
-                    isDark
-                      ? 'bg-white text-neutral-950 border-white hover:bg-neutral-200'
-                      : 'bg-neutral-950 text-white border-neutral-950 hover:bg-neutral-800'
-                  }`}
-                >
-                  Sign In
-                </button>
-              </Link>
-            ))}
-        </div>
-      </header>
-
-      {/* HERO SECTION */}
-      <main className="flex-1 flex flex-col justify-center px-8 lg:px-16 py-24 relative z-20 max-w-[1500px] w-full mx-auto">
-        <div className="space-y-6 max-w-5xl">
-          <div
-            className={`inline-flex items-center gap-2 border px-2.5 py-0.5 rounded-md ${
-              isDark
-                ? 'border-neutral-800 bg-neutral-900/50 text-neutral-400'
-                : 'border-neutral-200 bg-neutral-100 text-neutral-600'
-            }`}
-          >
-            <span className="text-[10px] font-medium tracking-wider uppercase">
-              Stable Release v1.0.0
+      {/* Navigation Header */}
+      <div className="relative z-10 border-b border-[color:var(--line)]">
+        <header className={`${CONTAINER} flex items-center justify-between gap-4 py-5 sm:py-6`}>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-[color:var(--fg)]" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-[color:var(--text)]">
+              RabbitHole
             </span>
           </div>
 
-          <div className="space-y-2 overflow-hidden">
-            <h1
-              ref={titleRow1Ref}
-              className={`text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-none ${
-                isDark ? 'text-neutral-400' : 'text-neutral-500'
-              }`}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            {/* Theme toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              className="flex h-8 w-8 items-center justify-center rounded text-[color:var(--muted)] transition-colors hover:text-[color:var(--fg)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-neutral-500"
             >
-              Visualize your learning
-            </h1>
-            <h1
-              ref={titleRow2Ref}
-              className={`text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-none ${
-                isDark ? 'text-white' : 'text-neutral-950'
-              }`}
-            >
-              rabbit holes
-            </h1>
-          </div>
+              {theme === 'dark' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              )}
+            </button>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
-            <p
-              ref={descRef}
-              className={`text-sm tracking-wide lg:col-span-7 leading-relaxed max-w-xl transition-colors duration-500 ${
-                isDark ? 'text-neutral-400' : 'text-neutral-600'
-              }`}
-            >
-              Stop drowning in open documentation tabs. A professional pipeline
-              architecture engineered to harvest documentation trails and
-              automatically map learning states into live, interactive node
-              flow structures.
-            </p>
+            {!authReady ? (
+              <div className="h-7 w-24 rounded bg-[color:var(--line)]" aria-hidden />
+            ) : session ? (
+              <>
+                <div className="hidden min-w-0 items-center gap-2 md:flex" title={email ?? undefined}>
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/80" />
+                  <span className="max-w-[200px] truncate font-mono text-[11px] text-[color:var(--muted)]">
+                    {email ?? 'Signed in'}
+                  </span>
+                </div>
 
-            <div
-              ref={ctaRef}
-              className="lg:col-span-5 lg:justify-self-end w-full sm:w-auto"
-            >
-              <Link href="/console">
+                <Link className={`${BTN_PRIMARY} px-3 py-1.5 sm:px-4`} href="/console">
+                  Go to Console
+                </Link>
+
                 <button
-                  className={`w-full sm:w-auto px-6 py-3 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer rounded-md border
-                  ${
-                    isDark
-                      ? 'text-neutral-950 bg-white border-white hover:bg-neutral-200 shadow-xs'
-                      : 'text-white bg-neutral-950 border-neutral-950 hover:bg-neutral-800'
-                  }`}
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className="px-2 py-1.5 text-xs font-medium text-[color:var(--muted)] transition-colors hover:text-[color:var(--fg)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-neutral-500 disabled:opacity-50 sm:px-3"
                 >
-                  {userEmail ? 'Open Console Workspace' : 'Get Started'}
+                  {signingOut ? 'Signing out…' : 'Sign Out'}
                 </button>
+              </>
+            ) : (
+              <Link className={`${BTN_PRIMARY} px-4 py-1.5`} href="/console">
+                Sign In
               </Link>
+            )}
+          </div>
+        </header>
+      </div>
+
+      <main className="relative z-10 flex-1">
+        {/* Hero Section: fills the first screen so the rest reveals on scroll */}
+        <section
+          className={`${CONTAINER} flex min-h-[calc(100svh-4.5rem)] flex-col justify-center py-16 sm:py-20`}
+        >
+          <div className="max-w-3xl">
+            <Reveal className="mb-6 inline-block">
+              <span className="rounded border border-[color:var(--line-strong)] bg-[color:var(--card)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-[color:var(--muted)] backdrop-blur">
+                STABLE RELEASE V1.2.0
+              </span>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <h1 className={`mb-8 text-4xl font-bold leading-[1.08] tracking-tight text-[color:var(--fg)] sm:text-6xl md:text-7xl ${HALO}`}>
+                Visualize your learning <br className="hidden sm:block" />
+                <span className="text-[color:var(--muted)]">rabbit holes</span>
+              </h1>
+            </Reveal>
+
+            <Reveal delay={160}>
+              <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-3">
+                <p className={`text-sm font-normal leading-relaxed text-[color:var(--muted)] sm:text-base md:col-span-2 ${HALO}`}>
+                  Stop drowning in open documentation tabs. A professional pipeline architecture
+                  engineered to harvest documentation trails and automatically map learning states
+                  into live, interactive node flow structures.
+                </p>
+
+                <div className="flex md:justify-end">
+                  <Link className={`${BTN_PRIMARY} px-6 py-2.5`} href="/console">
+                    Get Started
+                  </Link>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* About the project */}
+        <section className={`${CONTAINER} border-t border-[color:var(--line)] py-20 sm:py-28`}>
+          <div className="grid grid-cols-1 gap-10 md:grid-cols-5 md:gap-12">
+            <Reveal className="md:col-span-2">
+              <span className={`mb-3 block font-mono text-[10px] uppercase tracking-widest text-[color:var(--subtle)] ${HALO}`}>
+                ABOUT THE PROJECT
+              </span>
+              <h2 className={`text-2xl font-semibold leading-snug tracking-tight text-[color:var(--fg)] sm:text-3xl ${HALO}`}>
+                Documentation is where you learn. It just doesn&apos;t leave a map.
+              </h2>
+            </Reveal>
+
+            <div className={`space-y-5 text-sm leading-relaxed text-[color:var(--muted)] sm:text-base md:col-span-3 ${HALO}`}>
+              <Reveal delay={80}>
+                <p>
+                  Learning a new framework rarely follows a straight line. You open one page, it
+                  links to another, that one sends you to a third, and an hour later you have thirty
+                  tabs and no memory of how they connect.
+                </p>
+              </Reveal>
+              <Reveal delay={160}>
+                <p>
+                  RabbitHole follows that trail for you. A background extension records the
+                  documentation you visit, an LLM condenses each page into a structural summary, and
+                  the console lays it all out as a live node graph you can explore and return to.
+                </p>
+              </Reveal>
+              <Reveal delay={240}>
+                <p>
+                  Sign in to open the console and keep your maps tied to your account.
+                </p>
+              </Reveal>
             </div>
           </div>
-        </div>
-      </main>
+        </section>
 
-      {/* THE THREE-STEP PIPELINE TIMELINE SECTION */}
-      <section
-        className={`border-t py-20 relative z-20 transition-colors duration-500 ${
-          isDark
-            ? 'border-neutral-900 bg-neutral-950/10'
-            : 'border-neutral-200 bg-neutral-50/50'
-        }`}
-      >
-        <div className="max-w-[1500px] mx-auto px-8 lg:px-16">
-          <div className="mb-12">
-            <h2
-              className={`text-xs font-bold uppercase tracking-widest ${
-                isDark ? 'text-neutral-500' : 'text-neutral-400'
-              }`}
-            >
-              Architectural Blueprint
-            </h2>
-            <p
-              className={`text-lg font-semibold mt-1 ${
-                isDark ? 'text-neutral-300' : 'text-neutral-800'
-              }`}
-            >
+        {/* ARCHITECTURAL BLUEPRINT SECTION */}
+        <section className={`${CONTAINER} border-t border-[color:var(--line)] py-20 sm:py-28`}>
+          <Reveal className="mb-10">
+            <span className={`mb-1 block font-mono text-[10px] uppercase tracking-widest text-[color:var(--subtle)] ${HALO}`}>
+              ARCHITECTURAL BLUEPRINT
+            </span>
+            <p className={`text-sm font-semibold text-[color:var(--text)] ${HALO}`}>
               How context tracks into reactive graph nodes.
             </p>
+          </Reveal>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-6">
+            {STEPS.map((step, i) => (
+              <Reveal key={step.index} pop delay={i * 120} className="h-full">
+                <div className="group relative flex h-full flex-col rounded-lg border border-[color:var(--line-strong)] bg-[color:var(--card)] p-6 backdrop-blur transition-colors duration-300 hover:border-[color:var(--subtle)]">
+                  <div className="mb-4 flex items-baseline justify-between border-b border-[color:var(--line-strong)] pb-3">
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-[color:var(--subtle)]">
+                      {step.layer}
+                    </span>
+                    <span className="font-mono text-xl font-bold text-[color:var(--faint)] transition-colors group-hover:text-[color:var(--subtle)]">
+                      {step.index}
+                    </span>
+                  </div>
+                  <h4 className="mb-2 text-sm font-semibold text-[color:var(--text)]">
+                    {step.title}
+                  </h4>
+                  <p className="text-xs leading-relaxed text-[color:var(--muted)]">{step.body}</p>
+                </div>
+              </Reveal>
+            ))}
           </div>
+        </section>
 
-          <div
-            ref={featureSectionRef}
-            className="grid grid-cols-1 md:grid-cols-3 gap-8 relative"
-          >
-            <div
-              className={`border p-8 rounded-lg space-y-4 transition-all duration-300 backdrop-blur-xs relative group ${
-                isDark
-                  ? 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
-                  : 'border-neutral-200 bg-white hover:border-neutral-300'
-              }`}
-            >
-              <div className="text-4xl font-extrabold tracking-tight opacity-10 font-mono absolute right-6 top-4 select-none">
-                01
+        {/* Closing call to action */}
+        <section className={`${CONTAINER} border-t border-[color:var(--line)] py-20 sm:py-28`}>
+          <Reveal pop>
+            <div className="flex flex-col items-start justify-between gap-6 rounded-lg border border-[color:var(--line-strong)] bg-[color:var(--card)] p-8 backdrop-blur sm:flex-row sm:items-center sm:p-10">
+              <div className="max-w-xl">
+                <h3 className="mb-2 text-xl font-semibold tracking-tight text-[color:var(--fg)] sm:text-2xl">
+                  Map your next rabbit hole.
+                </h3>
+                <p className="text-sm leading-relaxed text-[color:var(--muted)]">
+                  Open the console and turn your open tabs into a graph you can follow.
+                </p>
               </div>
-              <div
-                className={`text-xs font-semibold px-2 py-0.5 inline-block rounded-md ${
-                  isDark
-                    ? 'bg-neutral-900 text-neutral-400'
-                    : 'bg-neutral-100 text-neutral-600'
-                }`}
-              >
-                Ingestion Layer
-              </div>
-              <h3
-                className={`text-base font-bold ${
-                  isDark ? 'text-white' : 'text-neutral-950'
-                }`}
-              >
-                Background Extension Harvest
-              </h3>
-              <p className="text-xs leading-relaxed text-neutral-500">
-                The lightweight browser companion quietly logs hierarchical
-                token updates as you navigate document trees without dropping
-                performance rates.
-              </p>
+              <Link className={`${BTN_PRIMARY} shrink-0 px-6 py-2.5`} href="/console">
+                {session ? 'Go to Console' : 'Get Started'}
+              </Link>
             </div>
+          </Reveal>
+        </section>
+      </main>
 
-            <div
-              className={`border p-8 rounded-lg space-y-4 transition-all duration-300 backdrop-blur-xs relative group ${
-                isDark
-                  ? 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
-                  : 'border-neutral-200 bg-white hover:border-neutral-300'
-              }`}
-            >
-              <div className="text-4xl font-extrabold tracking-tight opacity-10 font-mono absolute right-6 top-4 select-none">
-                02
-              </div>
-              <div
-                className={`text-xs font-semibold px-2 py-0.5 inline-block rounded-md ${
-                  isDark
-                    ? 'bg-neutral-900 text-neutral-400'
-                    : 'bg-neutral-100 text-neutral-600'
-                }`}
-              >
-                Analysis Engine
-              </div>
-              <h3
-                className={`text-base font-bold ${
-                  isDark ? 'text-white' : 'text-neutral-950'
-                }`}
-              >
-                LLM Structural Summary
-              </h3>
-              <p className="text-xs leading-relaxed text-neutral-500">
-                Raw web documentation fragments route directly through our deep
-                trace models to isolate key architectural code paths and index
-                clean learning states.
-              </p>
-            </div>
-
-            <div
-              className={`border p-8 rounded-lg space-y-4 transition-all duration-300 backdrop-blur-xs relative group ${
-                isDark
-                  ? 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
-                  : 'border-neutral-200 bg-white hover:border-neutral-300'
-              }`}
-            >
-              <div className="text-4xl font-extrabold tracking-tight opacity-10 font-mono absolute right-6 top-4 select-none">
-                03
-              </div>
-              <div
-                className={`text-xs font-semibold px-2 py-0.5 inline-block rounded-md ${
-                  isDark
-                    ? 'bg-neutral-900 text-neutral-400'
-                    : 'bg-neutral-100 text-neutral-600'
-                }`}
-              >
-                Projection Canvas
-              </div>
-              <h3
-                className={`text-base font-bold ${
-                  isDark ? 'text-white' : 'text-neutral-950'
-                }`}
-              >
-                Interactive Node Mappings
-              </h3>
-              <p className="text-xs leading-relaxed text-neutral-500">
-                Structured indexes land onto a reactive canvas, organizing messy
-                document tab chains into logical, structured flow paths.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* METRIC PANELS */}
-      <section
-        className={`border-t transition-colors duration-500 py-12 relative z-20 ${
-          isDark
-            ? 'border-neutral-900 bg-neutral-950/20'
-            : 'border-neutral-200 bg-slate-50/20'
-        }`}
-      >
-        <div className="max-w-[1500px] mx-auto px-8 lg:px-16 grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div
-            className={`border p-6 rounded-md space-y-2 transition-all duration-300 backdrop-blur-xs ${
-              isDark
-                ? 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
-                : 'border-neutral-200 bg-white hover:border-neutral-300'
-            }`}
-          >
-            <div
-              className={`text-xs font-semibold ${
-                isDark ? 'text-neutral-500' : 'text-neutral-400'
-              }`}
-            >
-              01 / Harvester
-            </div>
-            <h3
-              className={`text-sm font-semibold ${
-                isDark ? 'text-white' : 'text-neutral-950'
-              }`}
-            >
-              Context Ingestion
-            </h3>
-            <p className="text-xs leading-relaxed mt-1 text-neutral-500">
-              Silently indexes tab hierarchy arrays background-side without
-              structural drops.
-            </p>
-          </div>
-
-          <div
-            className={`border p-6 rounded-md space-y-2 transition-all duration-300 backdrop-blur-xs ${
-              isDark
-                ? 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
-                : 'border-neutral-200 bg-white hover:border-neutral-300'
-            }`}
-          >
-            <div
-              className={`text-xs font-semibold ${
-                isDark ? 'text-neutral-500' : 'text-neutral-400'
-              }`}
-            >
-              02 / Canvas
-            </div>
-            <h3
-              className={`text-sm font-semibold ${
-                isDark ? 'text-white' : 'text-neutral-950'
-              }`}
-            >
-              Reactive Networks
-            </h3>
-            <p className="text-xs leading-relaxed mt-1 text-neutral-500">
-              Transforms flat database configurations into clear branch history
-              paths.
-            </p>
-          </div>
-
-          <div
-            className={`border p-6 rounded-md space-y-2 transition-all duration-300 backdrop-blur-xs ${
-              isDark
-                ? 'border-neutral-900 bg-neutral-950/40 hover:border-neutral-800'
-                : 'border-neutral-200 bg-white hover:border-neutral-300'
-            }`}
-          >
-            <div
-              className={`text-xs font-semibold ${
-                isDark ? 'text-neutral-500' : 'text-neutral-400'
-              }`}
-            >
-              03 / Isolation
-            </div>
-            <h3
-              className={`text-sm font-semibold ${
-                isDark ? 'text-white' : 'text-neutral-950'
-              }`}
-            >
-              Hardened Privacy
-            </h3>
-            <p className="text-xs leading-relaxed mt-1 text-neutral-500">
-              Protected at the database layer via strict Row-Level Security
-              mappings.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer
-        className={`border-t px-8 py-4 text-xs text-center sm:text-left transition-colors duration-500 relative z-20 ${
-          isDark
-            ? 'border-neutral-900 bg-neutral-950/40 text-neutral-500'
-            : 'border-neutral-200 bg-white text-neutral-400'
-        }`}
-      >
-        <p>
-          © 2026 RabbitHole Workspace Engine. Secure multitenant layout
-          configuration operational.
-        </p>
-      </footer>
+      {/* Footer */}
+      <div className="relative z-10 border-t border-[color:var(--line)]">
+        <footer
+          className={`${CONTAINER} flex items-center justify-between py-6 font-mono text-[11px] text-[color:var(--subtle)]`}
+        >
+          <span>RabbitHole Engine</span>
+          <span>© 2026</span>
+        </footer>
+      </div>
     </div>
   );
 }
