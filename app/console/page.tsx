@@ -21,7 +21,6 @@ interface PageNodeData {
   visited_at: string;
   session_id?: number;
   parent_id?: number | null;
-  snippets?: string[];
 }
 
 interface SessionData {
@@ -40,7 +39,6 @@ export default function ConsoleDashboardPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'summary' | 'snippets'>('summary');
 
   const defaultEdgeOptions = useMemo(() => ({
     type: 'smoothstep',
@@ -188,35 +186,17 @@ export default function ConsoleDashboardPage() {
 
     fetchDashboardCoreData();
 
-    // 🌟 FIXED REAL-TIME INTERCEPTOR: Listens cleanly to both inserts and updates for pages and sessions
-    const pagesChannel = supabase
-      .channel(`pages_stream_${session.user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pages' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const newNode = payload.new as PageNodeData;
-          setNodesData((prev) => [...prev, newNode]);
-          setSelectedNodeId(String(newNode.id));
-        } else if (payload.eventType === 'UPDATE') {
-          const updatedNode = payload.new as PageNodeData;
-          setNodesData((prev) => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
-        } else if (payload.eventType === 'DELETE') {
-          const oldNode = payload.old as PageNodeData;
-          setNodesData((prev) => prev.filter(n => n.id !== oldNode.id));
-        }
-      })
-      .subscribe();
-
-    const sessionsChannel = supabase
-      .channel(`sessions_stream_${session.user.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sessions' }, (payload) => {
-        const updatedSession = payload.new as SessionData;
-        setSessionsList((prev) => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
+    const channel = supabase
+      .channel(`user_stream_${session.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pages' }, () => {
+        supabase.from('pages').select('*').order('visited_at', { ascending: true }).then(({ data }) => {
+          if (data) setNodesData(data);
+        });
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(pagesChannel);
-      supabase.removeChannel(sessionsChannel);
+      supabase.removeChannel(channel);
     };
   }, [session]);
 
@@ -235,11 +215,11 @@ export default function ConsoleDashboardPage() {
     );
   }, [activeSessionNodes, searchQuery]);
 
-  // 🌟 FIXED STALE STATE EVALUATION LAYER: Tracks mutation values completely fresh
   const activeNodeDetails = useMemo(() => {
     return nodesData.find((node) => String(node.id) === selectedNodeId) || null;
   }, [nodesData, selectedNodeId]);
 
+  // Clean Absolute Vertical Node Stack
   const flowNodes = useMemo(() => {
     const verticalSpacing = 150; 
     const xCenterOffset = 180;    
@@ -267,14 +247,15 @@ export default function ConsoleDashboardPage() {
         style: { 
           width: '260px',
           opacity: hasQuery && !isMatch ? 0.35 : 1,
-          border: isMatch ? (isDark ? '2px solid #ffffff' : '2px solid #000000') : (String(node.id) === selectedNodeId ? (isDark ? '1px solid #ffffff' : '1px solid #000000') : '1px solid rgba(255,255,255,0.1)'),
+          border: isMatch ? (isDark ? '2px solid #ffffff' : '2px solid #000000') : '1px solid rgba(255,255,255,0.1)',
           boxShadow: isMatch ? '0 0 15px rgba(255,255,255,0.15)' : 'none',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }
       };
     });
-  }, [activeSessionNodes, highlightedNodeIds, searchQuery, isDark, selectedNodeId]);
+  }, [activeSessionNodes, highlightedNodeIds, searchQuery, isDark]);
 
+  // Sequential Direct Target Connector Mapping
   const flowEdges = useMemo(() => {
     const edges: any[] = [];
     for (let i = 0; i < activeSessionNodes.length - 1; i++) {
@@ -298,11 +279,17 @@ export default function ConsoleDashboardPage() {
   }, [activeSessionNodes, selectedNodeId, isDark]);
 
   const workspaceMetrics = useMemo(() => {
-    const totalNodes = activeSessionNodes.length;
-    const domains = new Set<string>();
-    activeSessionNodes.forEach(node => { try { domains.add(new URL(node.url).hostname); } catch(_) {} });
-    return { nodeCount: totalNodes, domainCount: domains.size, timeSpan: `${Math.min(totalNodes * 3, 60)}m active` };
-  }, [activeSessionNodes]);
+  const totalNodes = activeSessionNodes.length;
+  const domains = new Set<string>();
+  activeSessionNodes.forEach(node => { 
+    try { domains.add(new URL(node.url).hostname); } catch(_) {} 
+  });
+  return { 
+    nodeCount: totalNodes, 
+    domainCount: domains.size, 
+    timeSpan: `${Math.min(totalNodes * 3, 60)}m active` 
+  };
+}, [activeSessionNodes]);
 
   if (!session) {
     return (
@@ -491,7 +478,7 @@ export default function ConsoleDashboardPage() {
                 minZoom={0.2}                  
                 maxZoom={1.5}                  
                 panOnScroll={true}       
-                panOnScrollMode="free"
+                panOnScrollMode={'free' as any}
                 zoomOnScroll={false}
                 zoomOnPinch={true}             
                 nodesDraggable={true}
@@ -502,7 +489,6 @@ export default function ConsoleDashboardPage() {
           </div>
         </div>
         
-        
         {/* LOG PANEL INSPECTOR */}
         <div className={`border rounded-lg flex flex-col h-[680px] overflow-hidden transition-all duration-500
           ${isDark ? 'bg-neutral-950/20 border-neutral-900' : 'bg-white border-neutral-200 shadow-xs'}`}
@@ -511,28 +497,9 @@ export default function ConsoleDashboardPage() {
             ${isDark ? 'border-neutral-900 bg-neutral-950/40' : 'border-neutral-200 bg-neutral-50'}`}
           >
             <div className="flex justify-between items-center">
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setActiveTab('summary')} 
-                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all ${
-                    activeTab === 'summary' 
-                      ? (isDark ? 'text-white border-b-2 border-white' : 'text-neutral-950 border-b-2 border-neutral-950') 
-                      : 'opacity-40 hover:opacity-70'
-                  }`}
-                >
-                  Telemetry Summary
-                </button>
-                <button 
-                  onClick={() => setActiveTab('snippets')} 
-                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all ${
-                    activeTab === 'snippets' 
-                      ? (isDark ? 'text-white border-b-2 border-white' : 'text-neutral-950 border-b-2 border-neutral-950') 
-                      : 'opacity-40 hover:opacity-70'
-                  }`}
-                >
-                  Harvested Snippets ({activeNodeDetails?.snippets?.length || 0})
-                </button>
-              </div>
+              <span className="text-xs font-bold uppercase tracking-wider pb-1">
+                Telemetry Summary
+              </span>
               {activeNodeDetails && (
                 <span className={`text-[11px] px-2.5 py-0.5 rounded-md border font-medium ${isDark ? 'bg-neutral-900 border-neutral-800 text-neutral-400' : 'bg-neutral-100 border-neutral-200 text-neutral-600'}`}>
                   Record #{activeNodeDetails.id}
@@ -557,7 +524,7 @@ export default function ConsoleDashboardPage() {
               <div className="h-full flex items-center justify-center text-xs text-neutral-400">
                 Select a canvas sequence element to load pipeline metadata.
               </div>
-            ) : activeTab === 'summary' ? (
+            ) : (
               <div className="space-y-6">
                 <div>
                   <label className={`text-[11px] font-semibold tracking-wider uppercase block mb-1 ${isDark ? 'text-neutral-500' : 'text-neutral-400'}`}>Target Resource</label>
@@ -593,58 +560,6 @@ export default function ConsoleDashboardPage() {
                     )}
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center pb-2 border-b border-neutral-900">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-                    Captured Artifacts Matrix
-                  </span>
-                </div>
-
-                {activeNodeDetails.snippets && activeNodeDetails.snippets.length > 0 ? (
-                  <div className="space-y-3.5">
-                    {activeNodeDetails.snippets.map((snip, i) => (
-                      <div 
-                        key={i} 
-                        className={`group relative border rounded-lg overflow-hidden transition-all duration-200 ${
-                          isDark ? 'border-neutral-900 bg-neutral-950/60 hover:border-neutral-800' : 'border-neutral-200 bg-neutral-50/40 hover:border-neutral-300'
-                        }`}
-                      >
-                        <div className={`flex justify-between items-center px-3.5 py-2 border-b ${
-                          isDark ? 'bg-neutral-950 border-neutral-900/60' : 'bg-neutral-100 border-neutral-200'
-                        }`}>
-                          <span className="text-[9px] font-mono uppercase text-neutral-500 tracking-widest">
-                            Snippet #{i + 1}
-                          </span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(snip);
-                              alert('Snippet copied to clipboard.');
-                            }}
-                            className={`text-[10px] font-mono opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1 px-2 py-0.5 rounded ${
-                              isDark ? 'text-neutral-400 bg-neutral-900 hover:text-white' : 'text-neutral-600 bg-white border border-neutral-200 hover:text-black shadow-xs'
-                            }`}
-                          >
-                            Copy Artifact
-                          </button>
-                        </div>
-                        <pre className={`text-xs font-mono p-4 break-words whitespace-pre-wrap select-text leading-relaxed ${
-                          isDark ? 'text-neutral-300' : 'text-neutral-800'
-                        }`}>
-                          {snip}
-                        </pre>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-20 border border-dashed border-neutral-900 rounded-lg bg-neutral-950/10">
-                    <p className="text-xs font-medium text-neutral-500">No telemetry fragments harvested yet.</p>
-                    <p className="text-[10px] text-neutral-600 mt-1 max-w-[240px] text-center leading-normal">
-                      Highlight any code block or phrase on a live focus webpage to anchor it here.
-                    </p>
-                  </div>
-                )}
               </div>
             )}
           </div>
