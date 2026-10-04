@@ -891,7 +891,6 @@ export default function ConsoleDashboardPage() {
                 minZoom={0.2}
                 maxZoom={1.5}
                 panOnScroll={true}
-                panOnScrollMode="free"
                 zoomOnScroll={false}
                 zoomOnPinch={true}
                 nodesDraggable={true}
