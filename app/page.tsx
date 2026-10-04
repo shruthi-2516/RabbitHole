@@ -552,4 +552,4 @@ export default function LandingPage() {
       </footer>
     </div>
   );
-}
+}gu
